@@ -23,7 +23,7 @@ char keysA[ROWS][COLS] = {
 // 키패드 B (숫자용)
 char keysB[ROWS][COLS] = {
     {'<','0','>','T'}, // 4행
-    {'7','8','9','T'}, // 3행
+    {'7','8','9','H'}, // 3행
     {'4','5','6','X'}, // 2행 | X : 숫자 Delete
     {'1','2','3','R'}  // 1행 | R : Reset
 };
@@ -50,21 +50,28 @@ int randomMatrix[RANDOM_COUNT][4] = {
 bool isModeA1 = true; // true: [A], false: [N]
 bool isEncryptTurn = true; // true면 다음 실행 시 암호화, false면 다음 실행 시 복호화 (순환 플래그)
 bool isResultState = false; // 암·복호화 결과 출력 상태인지 여부
+bool isShowKey = true; // true면 key행렬 보이기, false면 key행렬 숨기기
+bool isInvState = false;
 
 String textLine = "";     // 사용자가 타이핑하는 전체 원본 문자열
 String numberLine = "3,3,2,5,";   // LCD에 표시할 키 텍스트 (예: "1,5,8,5,")
+String originalNumberLine = "3,3,2,5,";
+String invNumberLine = "";  // 역행렬을 표시
 int numCount = 4;
 int matrix[4] = {3, 3, 2, 5}; // 입력받은 키 행렬 저장 공간
 
 // 추천 행렬 중 하나를 무작위로 선택해 적용하는 함수
 void setRandomMatrix() {
-    int randomIndex = random(0, RANDOM_COUNT); // 0 ~ 4 중 랜덤 선택
+    int randomIndex = random(0, RANDOM_COUNT); 
     
     numberLine = "";
+
     for(int i = 0; i < 4; i++) {
         matrix[i] = randomMatrix[randomIndex][i];
         numberLine += String(matrix[i]) + ",";
     }
+
+    originalNumberLine = numberLine; // 랜덤 키 생성 시 원본 백업도 동기화
     numCount = 4;
 }
 
@@ -84,9 +91,14 @@ void updateDisplay() {
     }
   
     // 2. 두 번째 줄 (행렬 키 표시)
-    lcd.setCursor(0, 1);
-    lcd.print("K:");
-    lcd.print(numberLine);
+    if (isShowKey) {
+        lcd.setCursor(0, 1);
+
+        String foreText = (isInvState) ? "-K:" : "K:";
+
+        lcd.print(foreText);
+        lcd.print(numberLine);
+    }
 }
 
 // 행렬 검증 및 연산을 담은 핵심 함수 (성공 시 true 반환)
@@ -140,6 +152,27 @@ bool runHill(bool encrypt) {
         result += (char)(c1 + 'A');
     }
 
+    if (encrypt) {
+        // 암호화 성공 시: 원래 행렬을 백업하고 역행렬을 계산해서 출력용 문자열로 만듦
+        originalNumberLine = numberLine; 
+        
+        int invK[4];
+        invK[0] = (matrix[3] * invDet) % 26;
+        invK[1] = ((26 - matrix[1]) * invDet) % 26;
+        invK[2] = ((26 - matrix[2]) * invDet) % 26;
+        invK[3] = (matrix[0] * invDet) % 26;
+
+        numberLine = "";
+        for(int i = 0; i < 4; i++) {
+            numberLine += String(invK[i]) + ",";
+        }
+    } else {
+        // 복호화 성공 시: 다시 원본 키 행렬 문자열로 복원
+        numberLine = originalNumberLine;
+    }
+
+    isInvState = !isInvState;
+
     // 암·복호화 결과를 textLine에 대체 저장
     textLine = result;
     isResultState = true; // 결과 모드로 진입 (숫자 입력 잠금 트리거)
@@ -183,6 +216,7 @@ void KeyA_Handler(char keyA) {
                 textLine = "";
                 isModeA1 = true; isResultState = false;
                 isEncryptTurn = true; // 리셋 시 다음 동작을 무조건 '암호화' 차례로 재설정
+                isInvState = false;
 
                 setRandomMatrix();
 
@@ -221,6 +255,7 @@ void KeyB_Handler(char keyB) {
         textLine = "";
         isModeA1 = true; isResultState = false;
         isEncryptTurn = true; // 리셋 시 다음 동작을 무조건 '암호화' 차례로 재설정
+        isInvState = false;
 
         setRandomMatrix();
 
@@ -230,6 +265,12 @@ void KeyB_Handler(char keyB) {
 
         updateDisplay();
         return; // 리셋 동작 수행 후 즉시 종료
+    }
+
+    if (keyB == 'H') { 
+        isShowKey = !isShowKey; 
+        updateDisplay(); 
+        return; 
     }
 
     // 암·복호화 문자 결과가 화면에 활성화되어 있을 땐 숫자 키패드 조작 제한
